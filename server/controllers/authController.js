@@ -1,7 +1,6 @@
 const User = require('../models/userModel');
 const bcrypt = require('bcrypt');
 const { validationResult } = require('express-validator');
-const { setUser, getUser } = require('../config/userStore'); // Import the in-memory user store
 
 // Register user
 exports.register = async (req, res) => {
@@ -63,11 +62,11 @@ exports.login = async (req, res) => {
       return res.status(401).json({ message: 'Incorrect email or password' });
     }
 
-    // Store user details in the in-memory store
-    setUser(user._id.toString(), user);
-
     // Remove password from response
     user.password = undefined;
+
+    // Store user in memory (not in session or JWT)
+    req.user = user;
 
     res.status(200).json({
       status: 'success',
@@ -115,6 +114,7 @@ exports.submitHobbies = async (req, res) => {
   }
 };
 
+// Show all users
 exports.showUsers = async (req, res) => {
   try {
     const users = await User.find();
@@ -133,17 +133,18 @@ exports.showUsers = async (req, res) => {
   }
 };
 
+// Update location
 exports.updateLocation = async (req, res) => {
   try {
     const { email, longitude, latitude } = req.body;
 
     if (!email || longitude == null || latitude == null) {
-      return res.status(400).json({ message: 'send everything bruh email,longitude and latitude'});
+      return res.status(400).json({ message: 'Email, longitude, and latitude are required' });
     }
 
     const user = await User.findOne({ email });
     if (!user) {
-      return res.status(404).json({ message: 'cannot find user' });
+      return res.status(404).json({ message: 'User not found' });
     }
 
     user.location = { longitude, latitude };
@@ -164,21 +165,56 @@ exports.updateLocation = async (req, res) => {
   }
 };
 
-// Example function to get user details from in-memory store
-exports.getUserFromStore = (req, res) => {
+// Find buddies based on radius, gender, age, and compatibility
+exports.findBuddies = async (req, res) => {
   try {
-    const userId = req.params.userId; // Assume userId is provided in the route params
+    const { userId } = req.body; // Current user's ID
 
-    const user = getUser(userId);
-
-    if (!user) {
-      return res.status(404).json({ message: 'User not found in store' });
+    // Fetch current user's details
+    const currentUser = await User.findById(userId);
+    if (!currentUser) {
+      return res.status(404).json({ message: 'User not found' });
     }
+
+    const { location: currentLocation, gender: currentGender, age: currentAge, hobbies: currentHobbies } = currentUser;
+
+    // Get all users within 10 km radius
+    const usersWithinRadius = await User.find({
+      location: {
+        $geoWithin: {
+          $centerSphere: [
+            [currentLocation.longitude, currentLocation.latitude],
+            10000 / 6378.1  // Convert meters to radians
+          ]
+        }
+      }
+    });
+
+    // Filter by same gender
+    const sameGenderUsers = usersWithinRadius.filter(user => user.gender === currentGender);
+
+    // Filter by age gap of 5 years
+    const ageFilteredUsers = sameGenderUsers.filter(user => Math.abs(user.age - currentAge) <= 5);
+
+    // Calculate compatibility score
+    const usersWithScores = ageFilteredUsers.map(user => {
+      const totalHobbies = 7;
+      const matchedHobbies = Object.keys(currentHobbies).filter(hobby => user.hobbies[hobby] === currentHobbies[hobby]).length;
+      const compatibilityScore = (matchedHobbies / totalHobbies) * 100;
+
+      return {
+        email: user.email,
+        compatibilityScore
+      };
+    });
+
+    // Sort users by compatibility score in descending order
+    usersWithScores.sort((a, b) => b.compatibilityScore - a.compatibilityScore);
 
     res.status(200).json({
       status: 'success',
       data: {
-        user,
+        users: usersWithScores
       },
     });
   } catch (err) {
