@@ -166,40 +166,44 @@ exports.updateLocation = async (req, res) => {
 };
 
 // Find buddies based on radius, gender, age, and compatibility
+// findBuddies function in authController.js
 exports.findBuddies = async (req, res) => {
   try {
-    const { userId } = req.body; // Current user's ID
+    const { userId } = req.body; // Assuming userId is sent in the request body
 
-    // Fetch current user's details
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
+
+    // Fetch the current user
     const currentUser = await User.findById(userId);
     if (!currentUser) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    const { location: currentLocation, gender: currentGender, age: currentAge, hobbies: currentHobbies } = currentUser;
+    // Fetch users within 10 km radius, same gender, and age gap of 5 years
+    const radius = 10; // Radius in kilometers
+    const maxAgeGap = 5; // Maximum age gap in years
 
-    // Get all users within 10 km radius
-    const usersWithinRadius = await User.find({
+    // Assuming a function getUsersWithinRadius is defined to find users within the radius
+    let potentialBuddies = await User.find({
+      _id: { $ne: userId }, // Exclude the current user
+      gender: currentUser.gender,
+      age: { $gte: currentUser.age - maxAgeGap, $lte: currentUser.age + maxAgeGap },
       location: {
         $geoWithin: {
           $centerSphere: [
-            [currentLocation.longitude, currentLocation.latitude],
-            10000 / 6378.1  // Convert meters to radians
+            [currentUser.location.longitude, currentUser.location.latitude],
+            radius / 6378.1 // Radius in radians
           ]
         }
       }
     });
 
-    // Filter by same gender
-    const sameGenderUsers = usersWithinRadius.filter(user => user.gender === currentGender);
-
-    // Filter by age gap of 5 years
-    const ageFilteredUsers = sameGenderUsers.filter(user => Math.abs(user.age - currentAge) <= 5);
-
     // Calculate compatibility score
-    const usersWithScores = ageFilteredUsers.map(user => {
-      const totalHobbies = 7;
-      const matchedHobbies = Object.keys(currentHobbies).filter(hobby => user.hobbies[hobby] === currentHobbies[hobby]).length;
+    potentialBuddies = potentialBuddies.map(user => {
+      const matchedHobbies = Object.keys(currentUser.hobbies).filter(hobby => user.hobbies[hobby] === currentUser.hobbies[hobby]).length;
+      const totalHobbies = 7; // Total hobbies to check
       const compatibilityScore = (matchedHobbies / totalHobbies) * 100;
 
       return {
@@ -208,14 +212,12 @@ exports.findBuddies = async (req, res) => {
       };
     });
 
-    // Sort users by compatibility score in descending order
-    usersWithScores.sort((a, b) => b.compatibilityScore - a.compatibilityScore);
+    // Sort buddies by compatibility score
+    potentialBuddies.sort((a, b) => b.compatibilityScore - a.compatibilityScore);
 
     res.status(200).json({
       status: 'success',
-      data: {
-        users: usersWithScores
-      },
+      data: potentialBuddies
     });
   } catch (err) {
     res.status(500).json({
@@ -224,3 +226,4 @@ exports.findBuddies = async (req, res) => {
     });
   }
 };
+
