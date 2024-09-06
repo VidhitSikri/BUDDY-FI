@@ -1,6 +1,7 @@
 const User = require('../models/userModel');
 const bcrypt = require('bcrypt');
 const { validationResult } = require('express-validator');
+const { setUser, getUser } = require('../config/userStore'); // Import the in-memory user store
 
 // Register user
 exports.register = async (req, res) => {
@@ -61,6 +62,9 @@ exports.login = async (req, res) => {
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(401).json({ message: 'Incorrect email or password' });
     }
+
+    // Store user details in the in-memory store
+    setUser(user._id.toString(), user);
 
     // Remove password from response
     user.password = undefined;
@@ -151,6 +155,31 @@ exports.updateLocation = async (req, res) => {
       data: {
         location: user.location
       }
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: 'error',
+      message: err.message,
+    });
+  }
+};
+
+// Example function to get user details from in-memory store
+exports.getUserFromStore = (req, res) => {
+  try {
+    const userId = req.params.userId; // Assume userId is provided in the route params
+
+    const user = getUser(userId);
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found in store' });
+    }
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        user,
+      },
     });
   } catch (err) {
     res.status(500).json({

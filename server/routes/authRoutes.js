@@ -1,5 +1,5 @@
 const express = require('express');
-const { register, login, submitHobbies, showUsers , updateLocation } = require('../controllers/authController');
+const { register, login, submitHobbies, showUsers, updateLocation, getUserFromStore } = require('../controllers/authController');
 const { check } = require('express-validator');
 
 const router = express.Router();
@@ -17,7 +17,9 @@ router.post(
 );
 
 router.post('/login', login);
-router.post('/submit-answers', submitHobbies);  
-router.get('/show-users', showUsers);  
+router.post('/submit-answers', submitHobbies);
+router.get('/show-users', showUsers);
 router.post('/update-location', updateLocation);
+router.get('/user/:userId', getUserFromStore); // New route to get user details from store
+
 module.exports = router;
